@@ -1,0 +1,17 @@
+{
+  "name": "Dompetku Pro Classic",
+  "short_name": "Dompetku",
+  "description": "Aplikasi Catat Keuangan Pribadi",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4776E6",
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/xd3Tyw2J/Dompetku.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
