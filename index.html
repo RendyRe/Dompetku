@@ -250,6 +250,17 @@
     let dataKeuangan = JSON.parse(localStorage.getItem('dompet_v3_pwa')) || [];
     let currentType = '', editId = null, startX = 0;
 
+    // --- TEMPEL URL GOOGLE SCRIPT KAMU DI SINI ---
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbwjvokS-a9jabj7Jv1_Wf9UR_34ewgDLWoZuWOec1X1hDI_2lu2rBCau-35xWMIJARs/exec'; 
+
+    function kirimKeSheets(item) {
+        fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors', // Penting agar tidak kena blokir browser
+            body: JSON.stringify(item)
+        }).catch(err => console.log("Gagal sinkron ke Sheets"));
+    }
+
     // --- SIDEBAR FUNCTIONS ---
     function toggleSidebar() {
         const sb = document.getElementById('mainSidebar');
@@ -265,9 +276,18 @@
     }
 
     function clearAllData() {
-        if(confirm("Hapus seluruh data transaksi permanen?")) {
+        if(confirm("Hapus seluruh data transaksi permanen di HP dan Spreadsheet?")) {
+            // 1. Kirim perintah hapus total ke Google Sheets
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ action: "CLEAR_ALL" })
+            }).catch(err => console.log("Gagal hapus di Sheets"));
+
+            // 2. Hapus data di HP
             dataKeuangan = [];
             localStorage.removeItem('dompet_v3_pwa');
+            
             render();
             toggleSidebar();
         }
@@ -322,30 +342,89 @@
     }
 
     function saveData(akun) {
-        const ket = document.getElementById('modalDesc').value, nom = cleanNumber(document.getElementById('modalAmount').value);
+        // 1. Ambil data dari Input Modal
+        const ket = document.getElementById('modalDesc').value;
+        const nom = cleanNumber(document.getElementById('modalAmount').value);
         const tglVal = document.getElementById('modalDate').value;
-        if (!ket || nom <= 0 || !tglVal) return;
+
+        // Validasi input
+        if (!ket || nom <= 0 || !tglVal) {
+            alert("Mohon isi semua data dengan benar!");
+            return;
+        }
+
         const p = tglVal.split('-');
         const tglFormatted = `${p[2]}/${p[1]}/${p[0]}`;
+        
+        let itemData; // Variabel untuk menampung data yang akan dikirim
+
         if(editId) {
+            // LOGIKA EDIT: Cari data lama berdasarkan ID
             const idx = dataKeuangan.findIndex(x => x.id === editId);
-            dataKeuangan[idx].ket = ket; dataKeuangan[idx].nom = nom; dataKeuangan[idx].akun = akun; dataKeuangan[idx].tgl = tglFormatted;
+            if (idx !== -1) {
+                dataKeuangan[idx].ket = ket; 
+                dataKeuangan[idx].nom = nom; 
+                dataKeuangan[idx].akun = akun; 
+                dataKeuangan[idx].tgl = tglFormatted;
+                itemData = dataKeuangan[idx];
+            }
         } else {
-            dataKeuangan.push({ id: Date.now(), ket, nom, tipe: currentType, akun, tgl: tglFormatted });
+            // LOGIKA BARU: Buat objek data baru
+            itemData = { 
+                id: Date.now(), 
+                ket: ket, 
+                nom: nom, 
+                tipe: currentType, 
+                akun: akun, 
+                tgl: tglFormatted 
+            };
+            dataKeuangan.push(itemData);
         }
-        render(); closeModal();
+
+        // 2. Jalankan Perintah
+        render(); // Update tampilan daftar
+        closeModal(); // Tutup modal input
+        
+        // 3. Kirim ke Google Sheets (Pastikan scriptURL sudah benar di atas)
+        if(typeof kirimKeSheets === 'function') {
+            kirimKeSheets(itemData);
+        }
     }
 
     function doTransfer() {
         const d = document.getElementById('trfFrom').value, k = document.getElementById('trfTo').value, n = cleanNumber(document.getElementById('trfAmount').value);
         if (d === k || n <= 0) return alert("Pilih akun yang berbeda!");
         const now = new Date().toLocaleDateString('id-ID');
-        dataKeuangan.push({ id: Date.now(), ket: `Trf to ${k.toUpperCase()}`, nom: n, tipe: 'keluar', akun: d, tgl: now, isTrf: true });
-        dataKeuangan.push({ id: Date.now()+1, ket: `Trf from ${d.toUpperCase()}`, nom: n, tipe: 'masuk', akun: k, tgl: now, isTrf: true });
-        render(); closeModal();
+        
+        const dataKeluar = { id: Date.now(), ket: `Trf to ${k.toUpperCase()}`, nom: n, tipe: 'keluar', akun: d, tgl: now, isTrf: true };
+        const dataMasuk = { id: Date.now()+1, ket: `Trf from ${d.toUpperCase()}`, nom: n, tipe: 'masuk', akun: k, tgl: now, isTrf: true };
+        
+        dataKeuangan.push(dataKeluar);
+        dataKeuangan.push(dataMasuk);
+
+        kirimKeSheets(dataKeluar); // <--- TAMBAHKAN INI
+        kirimKeSheets(dataMasuk);  // <--- TAMBAHKAN INI
+
+        render(); 
+        closeModal();
     }
 
-    function hapusData(id) { if (confirm("Hapus transaksi ini?")) { dataKeuangan = dataKeuangan.filter(i => i.id !== id); render(); } }
+    function hapusData(id) { 
+        if (confirm("Hapus transaksi ini secara permanen?")) { 
+            // Ambil data yang mau dihapus untuk dikirim ke Sheets
+            const itemHapus = dataKeuangan.find(i => i.id === id);
+            
+            if (itemHapus) {
+                // Beri tanda bahwa ini adalah perintah HAPUS
+                const payloadHapus = { ...itemHapus, action: "DELETE" };
+                kirimKeSheets(payloadHapus);
+            }
+
+            // Hapus dari memori HP
+            dataKeuangan = dataKeuangan.filter(i => i.id !== id); 
+            render(); 
+        } 
+    }
 
     function render() {
         const container = document.getElementById('list-transaksi'); 
